@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PPL: Please Patch Legacy — Gothic Refactor &amp; Migration Studio</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        /* Theme Variables — Default: Rosaria Indenture Namecard Palette */
+        :root {
+            --bg-main: #1b0c12;
+            --bg-grad-1: rgba(173, 85, 108, 0.34);
+            --bg-grad-2: rgba(156, 78, 96, 0.28);
+            --bg-surface: rgba(34, 15, 23, 0.88);
+            --bg-inset: rgba(22, 9, 15, 0.86);
+            --bg-code: #12070c;
+            --border-thorn: rgba(204, 149, 159, 0.38);
+            --border-subtle: rgba(173, 85, 108, 0.25);
+            --accent: #ad556c;
+            --accent-bright: #d5a3aa;
+            --accent-deep: #6b293b;
+            --text-primary: #faecef;
+            --text-secondary: #e2c2c9;
+            --text-muted: #b58994;
+            --glow-color: rgba(173, 85, 108, 0.32);
+        }
+
+        body.theme-bloodmoon {
+            --bg-main: #110508;
+            --bg-grad-1: rgba(190, 24, 65, 0.28);
+            --bg-grad-2: rgba(127, 29, 29, 0.26);
+            --bg-surface: rgba(26, 9, 14, 0.9);
+            --bg-inset: rgba(16, 5, 9, 0.88);
+            --bg-code: #0b0306;
+            --border-thorn: rgba(225, 29, 72, 0.42);
+            --border-subtle: rgba(159, 18, 57, 0.28);
+            --accent: #be123c;
+            --accent-bright: #fda4af;
+            --accent-deep: #4c0519;
+            --text-primary: #fff1f2;
+            --text-secondary: #fecdd3;
+            --text-muted: #c08491;
+            --glow-color: rgba(225, 29, 72, 0.32);
+        }
+
+        body.theme-cathedral {
+            --bg-main: #f4e6ea;
+            --bg-grad-1: rgba(204, 149, 159, 0.45);
+            --bg-grad-2: rgba(173, 85, 108, 0.25);
+            --bg-surface: rgba(255, 248, 250, 0.94);
+            --bg-inset: rgba(244, 226, 232, 0.85);
+            --bg-code: #1a0b11;
+            --border-thorn: rgba(156, 78, 96, 0.38);
+            --border-subtle: rgba(173, 85, 108, 0.22);
+            --accent: #9c4e60;
+            --accent-bright: #7d3647;
+            --accent-deep: #5a2230;
+            --text-primary: #2d111a;
+            --text-secondary: #5c2b3a;
+            --text-muted: #8a5564;
+            --glow-color: rgba(156, 78, 96, 0.2);
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            /* Rosaria Namecard: Smoky Wine-Rose Gradient + Stained-Glass Diamond Lattice */
+            background-image:
+                repeating-linear-gradient(45deg, rgba(213, 163, 170, 0.035) 0px, rgba(213, 163, 170, 0.035) 1px, transparent 1px, transparent 26px),
+                repeating-linear-gradient(-45deg, rgba(213, 163, 170, 0.035) 0px, rgba(213, 163, 170, 0.035) 1px, transparent 1px, transparent 26px),
+                radial-gradient(circle at 18% 12%, var(--bg-grad-1), transparent 48%),
+                radial-gradient(circle at 86% 24%, var(--bg-grad-2), transparent 52%),
+                linear-gradient(155deg, #2b121b 0%, #190a10 55%, #240e17 100%);
+            background-attachment: fixed;
+            transition: background-color 0.25s ease, color 0.25s ease;
+        }
+
+        body.theme-cathedral {
+            background-image:
+                repeating-linear-gradient(45deg, rgba(156, 78, 96, 0.045) 0px, rgba(156, 78, 96, 0.045) 1px, transparent 1px, transparent 26px),
+                repeating-linear-gradient(-45deg, rgba(156, 78, 96, 0.045) 0px, rgba(156, 78, 96, 0.045) 1px, transparent 1px, transparent 26px),
+                radial-gradient(circle at 18% 12%, var(--bg-grad-1), transparent 50%),
+                linear-gradient(155deg, #f8eef1 0%, #ecd6dc 60%, #f5e6ea 100%);
+        }
+
+        .gothic-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-thorn);
+            box-shadow: 0 18px 42px -18px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(213, 163, 170, 0.12);
+            backdrop-filter: blur(12px);
+        }
+
+        .gothic-inset {
+            background: var(--bg-inset);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .gothic-code-pane {
+            background: var(--bg-code);
+            border: 1px solid var(--border-thorn);
+        }
+
+        .thorn-title-wrap {
+            position: relative;
+        }
+
+        /* Signature Rosaria Roses & Thorns Run Button */
+        .rosaria-run-btn {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, #5e2233 0%, #9c4e60 48%, #b86f80 100%);
+            border: 1.5px solid rgba(213, 163, 170, 0.78);
+            box-shadow:
+                0 6px 26px rgba(173, 85, 108, 0.48),
+                inset 0 1px 0 rgba(250, 236, 239, 0.35);
+            transition: transform 0.18s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+
+        .rosaria-run-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow:
+                0 10px 34px rgba(213, 163, 170, 0.55),
+                inset 0 1px 0 rgba(250, 236, 239, 0.5);
+            filter: brightness(1.08);
+        }
+
+        .rosaria-run-btn:disabled {
+            opacity: 0.62;
+            cursor: not-allowed;
+        }
+
+        /* Dusty Wine Scrollbar */
+        .code-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .code-scroll::-webkit-scrollbar-track {
+            background: #14080d;
+        }
+        .code-scroll::-webkit-scrollbar-thumb {
+            background: #7c3749;
+            border-radius: 4px;
+        }
+        .code-scroll::-webkit-scrollbar-thumb:hover {
+            background: #ad556c;
+        }
+    </style>
+</head>
+<body class="relative min-h-screen overflow-x-hidden antialiased selection:bg-[#ad556c]/40 selection:text-white">
+    <!-- Background Rosaria Namecard Filigree Watermark (Flared Cross, Thorns, Roses & Cryo Snowflakes) -->
+    <div class="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-25">
+        <svg class="absolute -right-12 top-16 h-[560px] w-[560px] text-[#cc959f]" viewBox="0 0 400 400" fill="none">
+            <!-- Cryo Snowflakes -->
+            <g stroke="#e8c4c9" stroke-width="1.3" stroke-linecap="round" opacity="0.55">
+                <path d="M75 130V170M58 140L92 160M92 140L58 160M71 135L75 140L79 135M71 165L75 160L79 165" />
+                <path d="M320 270V300M307 278L333 292M333 278L307 292" />
+                <path d="M125 305V327M115 311L135 321M135 311L115 321" />
+            </g>
+            <!-- Spiked Halo Crest -->
+            <circle cx="245" cy="145" r="95" stroke="#d5a3aa" stroke-width="1" stroke-dasharray="6 8" opacity="0.35" />
+            <!-- Flared Gothic Spear Cross (tilted like Rosaria's namecard) -->
+            <g transform="rotate(14 250 185)">
+                <path d="M250 25 L264 118 L365 132 L264 146 L250 385 L236 146 L135 132 L236 118 Z" fill="#823447" stroke="#d5a3aa" stroke-width="1.5" />
+                <!-- Coiling Briar Vine & Curved Hook Thorns -->
+                <path d="M248 45 C 218 85, 282 125, 246 185 C 215 235, 280 285, 245 350" stroke="#e8c4c9" stroke-width="2" fill="none" />
+                <path d="M233 78 Q 216 74 222 89 Z" fill="#e8c4c9" />
+                <path d="M266 112 Q 284 108 274 123 Z" fill="#e8c4c9" />
+                <path d="M234 205 Q 214 202 224 218 Z" fill="#e8c4c9" />
+                <path d="M264 260 Q 284 258 272 274 Z" fill="#e8c4c9" />
+                <path d="M235 318 Q 217 316 226 331 Z" fill="#e8c4c9" />
+                <!-- Antique Layered Roses on the Cross -->
+                <g transform="translate(250, 132)">
+                    <circle r="18" fill="#b87b86" stroke="#f2dde0" stroke-width="1.2" />
+                    <path d="M-11 -4 C-6 -14, 10 -14, 12 -2 C13 9, 2 14, -6 11 C-13 8, -14 -1, -7 -6 C-2 -9, 6 -7, 6 0 C6 5, 0 7, -3 4" stroke="#3a1621" stroke-width="1.4" fill="#d5a3aa" />
+                </g>
+                <g transform="translate(248, 44)">
+                    <circle r="13" fill="#b87b86" stroke="#f2dde0" stroke-width="1.1" />
+                    <path d="M-8 -3 C-4 -10, 7 -10, 8 -1 C9 6, 1 10, -4 8 C-9 5, -9 -1, -4 -4" stroke="#3a1621" stroke-width="1.2" fill="#d5a3aa" />
+                </g>
+            </g>
+        </svg>
+    </div>
+
+    <!-- Top Gothic Navigation Bar -->
+    <header class="sticky top-0 z-30 border-b border-[#cc959f]/25 bg-[#16090f]/90 backdrop-blur-md">
+        <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+            <div class="flex items-center gap-3">
+                <!-- Flared Cross & Antique Rose Emblem -->
+                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#d5a3aa]/50 bg-gradient-to-br from-[#471a27] via-[#7c3749] to-[#ad556c] shadow-lg shadow-[#9c4e60]/30">
+                    <svg class="h-7 w-7 text-[#faecef]" viewBox="0 0 40 40" fill="none">
+                        <path d="M20 4 L22.5 13.5 L33 16 L22.5 18.5 L20 36 L17.5 18.5 L7 16 L17.5 13.5 Z" fill="#6b293b" stroke="#f2dde0" stroke-width="1.4" />
+                        <path d="M19 8 C14 12, 26 20, 18 28" stroke="#f2dde0" stroke-width="1.2" stroke-linecap="round" />
+                        <path d="M16 11 Q12 10 14 14 Z M23 21 Q27 21 24 25 Z" fill="#f2dde0" />
+                        <circle cx="20" cy="16" r="4.8" fill="#d5a3aa" stroke="#471a27" stroke-width="1.1" />
+                        <path d="M17.5 15.5 C18.5 13.5, 22 13.5, 22.5 15.8 C22.8 17.5, 20 18.8, 18.5 17.8" stroke="#471a27" stroke-width="1.1" fill="none" />
+                    </svg>
+                </div>
+
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <h1 class="text-base font-extrabold tracking-tight text-[#faecef] sm:text-lg">
+                            PPL: <span class="text-[#d5a3aa]">Please Patch Legacy</span>
+                        </h1>
+                        <span class="rounded-full border border-[#d5a3aa]/40 bg-[#9c4e60]/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#f2dde0]">
+                            v2.0
+                        </span>
+                    </div>
+                    <p class="text-[11px] text-[#cc959f]">
+                        Autonomous Code Refactoring • Dependency Migration • Dual-Agent Audit
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2.5">
+                <!-- Clean Gothic Status Pill (No Raw Model Names / No Green Light) -->
+                <div id="health-badge" class="inline-flex items-center gap-2 rounded-full border border-[#cc959f]/35 bg-[#251018] px-3 py-1.5 text-xs font-medium text-[#f2dde0]">
+                    <span id="health-dot" class="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-[#cc959f]"></span>
+                    <span id="health-text">Awakening Sanctuary...</span>
+                </div>
+
+                <!-- Theme Switcher -->
+                <select
+                    id="theme-select"
+                    title="Switch Theme"
+                    class="rounded-lg border border-[#cc959f]/35 bg-[#251018] px-2.5 py-1.5 text-xs font-medium text-[#f2dde0] focus:border-[#d5a3aa] focus:outline-none"
+                >
+                    <option value="rosaria">Theme: Rosaria (Indenture)</option>
+                    <option value="bloodmoon">Theme: Bloodmoon Crimson</option>
+                    <option value="cathedral">Theme: Cathedral Rose (Light)</option>
+                </select>
+
+                <a href="#about-section" class="rounded-lg border border-[#cc959f]/35 bg-[#251018] px-3 py-1.5 text-xs font-medium text-[#f2dde0] transition hover:border-[#d5a3aa] hover:bg-[#471a27]">
+                    About
+                </a>
+
+                <a href="#history-section" class="inline-flex items-center gap-1.5 rounded-lg border border-[#cc959f]/35 bg-[#251018] px-3 py-1.5 text-xs font-medium text-[#f2dde0] transition hover:border-[#d5a3aa] hover:bg-[#471a27]">
+                    <span>History</span>
+                    <span id="history-count-pill" class="rounded-full bg-[#ad556c]/35 px-1.5 py-0.5 text-[11px] font-bold text-[#faecef]">0</span>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="relative z-10 mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+        <!-- Missing API Key Banner -->
+        <div id="api-key-warning" class="hidden rounded-xl border border-amber-400/45 bg-amber-950/50 p-4 text-sm text-amber-100">
+            <p class="font-semibold">API Key Configuration Needed</p>
+            <p class="mt-0.5 text-xs text-amber-200/85">
+                Open your local <code class="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[#d5a3aa]">.env</code> file, paste your key, and restart <code class="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[#d5a3aa]">python -m uvicorn main:app --reload</code>.
+            </p>
+        </div>
+
+        <!-- Error Alert Banner -->
+        <div id="error-banner" class="hidden rounded-xl border border-rose-400/50 bg-rose-950/60 p-4 text-sm text-rose-100">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="font-semibold">Action Could Not Complete</p>
+                    <p id="error-message" class="mt-0.5 text-xs text-rose-200/90"></p>
+                </div>
+                <button id="dismiss-error-btn" type="button" class="rounded-md px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/20">
+                    Dismiss
+                </button>
+            </div>
+        </div>
+
+        <!-- HERO WORKBENCH: Input (7 cols) + Choose Migration Goal (5 cols) -->
+        <section class="gothic-card rounded-2xl p-5 sm:p-6">
+            <!-- Thorned Title Banner -->
+            <div class="thorn-title-wrap pb-3">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex items-center gap-3">
+                        <svg class="h-7 w-7 shrink-0 text-[#d5a3aa]" viewBox="0 0 32 32" fill="none">
+                            <path d="M16 2 L18 11 L28 13 L18 15 L16 30 L14 15 L4 13 L14 11 Z" fill="#7c3749" stroke="#e8c4c9" stroke-width="1.2" />
+                            <circle cx="16" cy="13" r="3.4" fill="#d5a3aa" stroke="#471a27" stroke-width="1" />
+                        </svg>
+                        <div>
+                            <h2 class="text-base font-bold sm:text-lg" style="color: var(--text-primary);">
+                                1. Input Code, File, or GitHub Link
+                            </h2>
+                            <p class="text-xs" style="color: var(--text-muted);">
+                                Paste legacy code, upload a manifest file, or fetch code straight from a public GitHub URL.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 3-Way Source Switcher -->
+                    <div class="gothic-inset inline-flex flex-wrap rounded-xl p-1">
+                        <button id="tab-paste" type="button" class="rounded-lg bg-gradient-to-r from-[#7c3749] to-[#ad556c] px-3 py-1.5 text-xs font-semibold text-white shadow transition">
+                            Paste Code
+                        </button>
+                        <button id="tab-upload" type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold text-[#cc959f] transition hover:text-white">
+                            Upload File
+                        </button>
+                        <button id="tab-github" type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold text-[#cc959f] transition hover:text-white">
+                            GitHub URL
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Curved Briar Vine with Hooked Rose Thorns -->
+                <svg class="mt-3 h-5 w-full" viewBox="0 0 900 22" preserveAspectRatio="none" fill="none">
+                    <path d="M0 11 C 90 4, 180 18, 270 11 C 360 4, 450 18, 540 11 C 630 4, 720 18, 810 11 C 855 8, 880 12, 900 11" stroke="#ad556c" stroke-width="1.7" />
+                    <path d="M0 12 C 110 18, 210 5, 320 12 C 430 18, 550 5, 670 12 C 760 17, 840 7, 900 11" stroke="#d5a3aa" stroke-width="0.9" opacity="0.65" />
+                    <!-- Hooked Briar Thorns (Curved Spikes, not sticks!) -->
+                    <path d="M52 10 Q42 2 58 7 Z" fill="#d5a3aa" />
+                    <path d="M128 13 Q138 21 120 16 Z" fill="#cc959f" />
+                    <path d="M215 9 Q204 1 223 7 Z" fill="#d5a3aa" />
+                    <path d="M312 13 Q323 21 304 15 Z" fill="#cc959f" />
+                    <path d="M405 10 Q395 2 414 8 Z" fill="#d5a3aa" />
+                    <path d="M500 12 Q511 21 492 15 Z" fill="#cc959f" />
+                    <path d="M595 9 Q585 1 604 7 Z" fill="#d5a3aa" />
+                    <path d="M692 13 Q703 21 684 15 Z" fill="#cc959f" />
+                    <path d="M785 10 Q775 2 794 8 Z" fill="#d5a3aa" />
+                    <path d="M852 12 Q863 20 845 14 Z" fill="#cc959f" />
+                    <!-- Tiny Antique Rose Buds along the vine -->
+                    <circle cx="270" cy="11" r="4.5" fill="#9c4e60" stroke="#e8c4c9" stroke-width="1" />
+                    <circle cx="630" cy="11" r="4.5" fill="#9c4e60" stroke="#e8c4c9" stroke-width="1" />
+                </svg>
+            </div>
+
+            <!-- 12-Column Balanced Grid: Left 7 cols + Right 5 cols -->
+            <div class="mt-2 grid grid-cols-1 gap-6 lg:grid-cols-12">
+                <!-- Left 7 cols: Paste / Upload / GitHub -->
+                <div class="min-w-0 lg:col-span-7">
+                    <!-- Panel 1: Paste Code -->
+                    <div id="panel-paste" class="space-y-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="text-xs font-medium" style="color: var(--text-muted);">Samples:</span>
+                                <button id="sample-py2" type="button" class="rounded-lg border border-[#cc959f]/30 bg-[#3a1623]/70 px-2.5 py-1 text-xs text-[#faecef] transition hover:border-[#d5a3aa] hover:bg-[#5e2233]">
+                                    Python 2 Legacy
+                                </button>
+                                <button id="sample-flask" type="button" class="rounded-lg border border-[#cc959f]/30 bg-[#3a1623]/70 px-2.5 py-1 text-xs text-[#faecef] transition hover:border-[#d5a3aa] hover:bg-[#5e2233]">
+                                    Flask API
+                                </button>
+                                <button id="sample-deps" type="button" class="rounded-lg border border-[#cc959f]/30 bg-[#3a1623]/70 px-2.5 py-1 text-xs text-[#faecef] transition hover:border-[#d5a3aa] hover:bg-[#5e2233]">
+                                    Old requirements.txt
+                                </button>
+                                <button id="sample-js" type="button" class="rounded-lg border border-[#cc959f]/30 bg-[#3a1623]/70 px-2.5 py-1 text-xs text-[#faecef] transition hover:border-[#d5a3aa] hover:bg-[#5e2233]">
+                                    Legacy JS
+                                </button>
+                            </div>
+                            <button id="clear-code-btn" type="button" class="text-xs text-[#d5a3aa]/80 transition hover:text-white">
+                                Clear
+                            </button>
+                        </div>
+
+                        <div class="gothic-inset flex items-center gap-2 rounded-xl px-3 py-2">
+                            <label for="filename-input" class="text-xs font-semibold text-[#d5a3aa]">Filename:</label>
+                            <input
+                                id="filename-input"
+                                type="text"
+                                value="legacy_app.py"
+                                placeholder="e.g., app.py, requirements.txt, package.json"
+                                class="w-full bg-transparent font-mono text-xs focus:outline-none"
+                                style="color: var(--text-primary);"
+                            />
+                        </div>
+
+                        <div class="relative">
+                            <textarea
+                                id="code-input"
+                                rows="16"
+                                spellcheck="false"
+                                placeholder="Paste messy Python 2, Flask, Express, React, SQL, or outdated requirements.txt / package.json here..."
+                                class="code-scroll w-full rounded-xl border border-[#cc959f]/35 bg-[#12070c] p-4 font-mono text-xs leading-relaxed text-[#faecef] placeholder-[#b58994]/45 focus:border-[#d5a3aa] focus:outline-none focus:ring-1 focus:ring-[#d5a3aa]"
+                            ></textarea>
+                            <div id="input-stats" class="mt-1.5 flex items-center justify-between text-[11px]" style="color: var(--text-muted);">
+                                <span>0 lines • 0 chars</span>
+                                <span>Ready inside local sanctuary</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Panel 2: Upload File -->
+                    <div id="panel-upload" class="hidden space-y-3">
+                        <label
+                            id="drop-zone"
+                            for="file-input"
+                            class="flex min-h-[340px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#cc959f]/40 bg-[#14080d]/85 p-8 text-center transition hover:border-[#d5a3aa] hover:bg-[#2b111b]/60"
+                        >
+                            <div class="flex h-12 w-12 items-center justify-center rounded-full border border-[#d5a3aa]/45 bg-[#9c4e60]/25 text-[#f2dde0]">
+                                <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                </svg>
+                            </div>
+                            <p class="mt-4 text-sm font-semibold text-[#faecef]">
+                                Drag &amp; drop your source file here, or <span class="text-[#d5a3aa] underline">browse</span>
+                            </p>
+                            <p class="mt-1 text-xs text-[#b58994]">
+                                Supports .py, .js, .ts, .java, .go, requirements.txt, package.json, Dockerfile, and more (max 1 MB)
+                            </p>
+                            <input id="file-input" type="file" class="hidden" />
+                        </label>
+
+                        <div id="file-preview-box" class="hidden items-center justify-between rounded-xl border border-[#d5a3aa]/40 bg-[#3a1623]/40 px-4 py-3">
+                            <div class="truncate">
+                                <p id="selected-file-name" class="truncate font-mono text-xs font-semibold text-[#faecef]"></p>
+                                <p id="selected-file-meta" class="text-[11px] text-[#cc959f]"></p>
+                            </div>
+                            <button id="clear-file-btn" type="button" class="rounded-lg px-2.5 py-1 text-xs font-medium text-rose-300 hover:bg-rose-500/20">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Panel 3: GitHub URL Importer -->
+                    <div id="panel-github" class="hidden space-y-3">
+                        <div class="gothic-inset rounded-2xl p-4">
+                            <p class="text-xs font-semibold text-[#d5a3aa]">Import from any Public GitHub File or Repository</p>
+                            <p class="mt-0.5 text-[11px]" style="color: var(--text-muted);">
+                                Paste either a direct file link (<code class="font-mono">https://github.com/user/repo/blob/main/app.py</code>) or a repository link (<code class="font-mono">https://github.com/user/repo</code>) to pick files.
+                            </p>
+
+                            <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+                                <input
+                                    id="github-url-input"
+                                    type="url"
+                                    placeholder="https://github.com/owner/repo or .../blob/main/file.py"
+                                    class="w-full rounded-xl border border-[#cc959f]/35 bg-[#12070c] px-3 py-2.5 font-mono text-xs text-[#faecef] placeholder-[#b58994]/45 focus:border-[#d5a3aa] focus:outline-none"
+                                />
+                                <button
+                                    id="github-inspect-btn"
+                                    type="button"
+                                    class="shrink-0 rounded-xl border border-[#d5a3aa]/50 bg-gradient-to-r from-[#7c3749] to-[#ad556c] px-4 py-2.5 text-xs font-semibold text-white transition hover:brightness-110"
+                                >
+                                    Fetch from GitHub
+                                </button>
+                            </div>
+                            <p id="github-status" class="mt-2 hidden text-xs text-[#d5a3aa]"></p>
+                        </div>
+
+                        <!-- Repo File Browser -->
+                        <div id="github-repo-browser" class="hidden gothic-inset rounded-2xl p-4 space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <p id="github-repo-meta" class="font-mono text-xs font-semibold text-[#f2dde0]"></p>
+                                <input
+                                    id="github-file-search"
+                                    type="text"
+                                    placeholder="Filter files (e.g. .py, requirements)..."
+                                    class="rounded-lg border border-[#cc959f]/30 bg-[#12070c] px-2.5 py-1 text-xs text-[#faecef] placeholder-[#b58994]/45 focus:border-[#d5a3aa] focus:outline-none"
+                                />
+                            </div>
+                            <div id="github-file-list" class="code-scroll max-h-64 space-y-1 overflow-y-auto pr-1"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right 5 cols: Choose Migration Goal + Agents + Rosaria Rose & Thorn Run Button -->
+                <div class="gothic-inset min-w-0 flex flex-col justify-between space-y-4 rounded-2xl p-4 lg:col-span-5">
+                    <div class="space-y-3.5">
+                        <!-- Thorn-Wrapped Goal Header -->
+                        <div>
+                            <div class="flex items-center gap-2.5">
+                                <svg class="h-6 w-6 shrink-0 text-[#d5a3aa]" viewBox="0 0 28 28" fill="none">
+                                    <path d="M14 2 L16 10 L24 12 L16 14 L14 26 L12 14 L4 12 L12 10 Z" fill="#7c3749" stroke="#e8c4c9" stroke-width="1.1" />
+                                    <circle cx="14" cy="12" r="2.8" fill="#d5a3aa" />
+                                </svg>
+                                <h3 class="text-sm font-bold" style="color: var(--text-primary);">
+                                    2. Choose Migration Goal
+                                </h3>
+                            </div>
+                            <svg class="mt-1.5 h-4 w-full" viewBox="0 0 360 16" preserveAspectRatio="none" fill="none">
+                                <path d="M0 8 C 45 2, 95 14, 150 8 C 205 2, 265 14, 320 8 L 360 8" stroke="#ad556c" stroke-width="1.4" />
+                                <path d="M36 7 Q28 1 42 5 Z" fill="#d5a3aa" />
+                                <path d="M98 9 Q106 15 91 12 Z" fill="#cc959f" />
+                                <path d="M168 7 Q160 1 174 5 Z" fill="#d5a3aa" />
+                                <path d="M238 9 Q247 15 231 12 Z" fill="#cc959f" />
+                                <path d="M306 7 Q298 1 312 5 Z" fill="#d5a3aa" />
+                            </svg>
+                        </div>
+
+                        <div>
+                            <label for="goal-select" class="mb-1 block text-xs font-medium" style="color: var(--text-secondary);">
+                                Migration Preset (16 Goals)
+                            </label>
+                            <select
+                                id="goal-select"
+                                class="w-full rounded-xl border border-[#cc959f]/35 bg-[#1a0b12] px-3 py-2 text-xs font-medium text-[#faecef] focus:border-[#d5a3aa] focus:outline-none"
+                            >
+                                <option value="full_autonomous">Full Autonomous Audit (Code + Dependencies)</option>
+                                <option value="py2to3">Python 2 → Python 3.12+ Migration</option>
+                                <option value="flask_to_fastapi">Flask → FastAPI + Pydantic v2</option>
+                                <option value="django_modern">Legacy Django → Modern Django 5 / Async</option>
+                                <option value="requests_to_httpx">Sync requests → Async httpx</option>
+                                <option value="pydantic_v1_to_v2">Pydantic v1 → Pydantic v2 Migration</option>
+                                <option value="sqlalchemy_1_to_2">SQLAlchemy 1.x → SQLAlchemy 2.0 Typed ORM</option>
+                                <option value="clean_code">Clean Code, SOLID Refactoring &amp; Typing</option>
+                                <option value="security_hardening">Security Hardening (SQLi, Secrets, Validation)</option>
+                                <option value="perf_async">Performance &amp; Async Concurrency Upgrade</option>
+                                <option value="upgrade_deps">Dependency Manifest Upgrade (requirements / package.json)</option>
+                                <option value="js_to_ts">Legacy JS (ES5) → Modern TypeScript / ES2024</option>
+                                <option value="react_class_to_hooks">React Class Components → Functional + Hooks</option>
+                                <option value="cjs_to_esm">CommonJS (require) → ES Modules (import)</option>
+                                <option value="unit_tests">Generate Unit Tests (Pytest / Vitest)</option>
+                                <option value="custom">Custom Migration Goal...</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="mode-select" class="mb-1 block text-xs font-medium" style="color: var(--text-secondary);">
+                                Engine Focus
+                            </label>
+                            <select
+                                id="mode-select"
+                                class="w-full rounded-xl border border-[#cc959f]/35 bg-[#1a0b12] px-3 py-2 text-xs text-[#faecef] focus:border-[#d5a3aa] focus:outline-none"
+                            >
+                                <option value="full_autonomous">Full Autonomous (Refactor + Dependencies)</option>
+                                <option value="refactor">Refactor Code Quality Only</option>
+                                <option value="migrate_dependencies">Migrate Dependencies &amp; APIs Only</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="target-stack-input" class="mb-1 block text-xs font-medium" style="color: var(--text-secondary);">
+                                Target Stack <span class="text-[10px] text-[#d5a3aa]/80">(Upgrade To)</span>
+                            </label>
+                            <input
+                                id="target-stack-input"
+                                type="text"
+                                value="Latest stable LTS & modern best practices"
+                                placeholder="e.g., Python 3.12 + FastAPI + Pydantic v2"
+                                class="w-full rounded-xl border border-[#cc959f]/35 bg-[#1a0b12] px-3 py-2 text-xs text-[#faecef] placeholder-[#b58994]/45 focus:border-[#d5a3aa] focus:outline-none"
+                            />
+                        </div>
+
+                        <div>
+                            <label for="instructions-input" class="mb-1 block text-xs font-medium" style="color: var(--text-secondary);">
+                                Custom Instructions <span class="text-[10px] opacity-70">(optional)</span>
+                            </label>
+                            <textarea
+                                id="instructions-input"
+                                rows="2"
+                                placeholder="e.g., Keep function names unchanged, add docstrings..."
+                                class="w-full rounded-xl border border-[#cc959f]/35 bg-[#1a0b12] px-3 py-2 text-xs text-[#faecef] placeholder-[#b58994]/45 focus:border-[#d5a3aa] focus:outline-none"
+                            ></textarea>
+                        </div>
+
+                        <!-- Multi-Agent Controls: Optional Agent 2 Free Models Catalog -->
+                        <div class="rounded-xl border border-[#cc959f]/30 bg-[#2d121d]/45 p-3 space-y-2.5">
+                            <div class="flex items-center justify-between gap-2">
+                                <label class="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#faecef]">
+                                    <input id="enable-agent2-checkbox" type="checkbox" class="h-3.5 w-3.5 accent-[#ad556c]" />
+                                    <span>Dual-Agent Audit (Free Catalog)</span>
+                                </label>
+                                <span class="rounded-full bg-[#ad556c]/30 px-2 py-0.5 text-[10px] font-semibold text-[#f2dde0]">
+                                    Agent 2
+                                </span>
+                            </div>
+
+                            <div id="agent2-panel" class="hidden space-y-2 pt-1">
+                                <div class="flex gap-1.5">
+                                    <input
+                                        id="nvidia-model-search"
+                                        type="text"
+                                        placeholder="Search free models (deepseek, qwen, llama...)"
+                                        class="w-full rounded-lg border border-[#cc959f]/30 bg-[#14080d] px-2.5 py-1.5 text-[11px] text-[#faecef] placeholder-[#b58994]/45 focus:border-[#d5a3aa] focus:outline-none"
+                                    />
+                                    <button
+                                        id="refresh-nvidia-models-btn"
+                                        type="button"
+                                        class="shrink-0 rounded-lg border border-[#cc959f]/35 bg-[#471a27] px-2.5 py-1 text-[11px] text-[#f2dde0] hover:bg-[#5e2233]"
+                                    >
+                                        Refresh
+                                    </button>
+                                </div>
+
+                                <select
+                                    id="nvidia-model-select"
+                                    class="w-full rounded-lg border border-[#cc959f]/35 bg-[#14080d] px-2.5 py-1.5 font-mono text-[11px] text-[#faecef] focus:border-[#d5a3aa] focus:outline-none"
+                                ></select>
+
+                                <input
+                                    id="nvidia-custom-key-input"
+                                    type="password"
+                                    placeholder="Optional: paste your own free nvapi-... key (uses .env by default)"
+                                    class="w-full rounded-lg border border-[#cc959f]/25 bg-[#14080d] px-2.5 py-1.5 font-mono text-[11px] text-[#faecef] placeholder-[#b58994]/40 focus:border-[#d5a3aa] focus:outline-none"
+                                />
+
+                                <p id="nvidia-models-status" class="text-[10px] text-[#cc959f]"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Signature Rosaria Roses & Briar Thorns Run Button -->
+                    <div class="pt-1">
+                        <button
+                            id="run-refactor-btn"
+                            type="button"
+                            class="rosaria-run-btn flex w-full items-center justify-between rounded-2xl px-4 py-3.5 text-sm font-bold tracking-wide text-[#faecef]"
+                        >
+                            <!-- Left Layered Antique Rose & Hooked Briar Thorns -->
+                            <svg class="h-8 w-14 shrink-0" viewBox="0 0 64 32" fill="none">
+                                <path d="M2 16 C 12 22, 24 10, 38 16" stroke="#f2dde0" stroke-width="1.5" stroke-linecap="round" />
+                                <path d="M10 18 Q5 25 16 20 Z" fill="#e8c4c9" />
+                                <path d="M21 13 Q17 5 26 11 Z" fill="#f2dde0" />
+                                <path d="M31 16 Q28 24 35 18 Z" fill="#e8c4c9" />
+                                <!-- Multi-Petal Rosaria Rose -->
+                                <g transform="translate(46, 16)">
+                                    <circle r="10.5" fill="#d5a3aa" stroke="#471a27" stroke-width="1.2" />
+                                    <path d="M-7 -2 C-4 -9, 6 -9, 8 -1 C9 5, 1 9, -4 7 C-8 5, -9 -1, -4 -4 C-1 -6, 4 -4, 4 0 C4 3, 0 5, -2 2" stroke="#471a27" stroke-width="1.2" fill="#e8c4c9" />
+                                </g>
+                            </svg>
+
+                            <span class="flex items-center justify-center gap-2">
+                                <svg id="run-btn-icon" class="h-4 w-4 text-[#faecef]" viewBox="0 0 24 24" fill="none">
+                                    <path d="M12 2 L14 10 L21 12 L14 14 L12 22 L10 14 L3 12 L10 10 Z" fill="#faecef" />
+                                </svg>
+                                <svg id="run-btn-spinner" class="hidden h-4 w-4 animate-spin text-[#faecef]" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                <span id="run-btn-text">Patch Legacy Now</span>
+                            </span>
+
+                            <!-- Right Layered Antique Rose & Hooked Briar Thorns -->
+                            <svg class="h-8 w-14 shrink-0" viewBox="0 0 64 32" fill="none">
+                                <path d="M62 16 C 52 22, 40 10, 26 16" stroke="#f2dde0" stroke-width="1.5" stroke-linecap="round" />
+                                <path d="M54 18 Q59 25 48 20 Z" fill="#e8c4c9" />
+                                <path d="M43 13 Q47 5 38 11 Z" fill="#f2dde0" />
+                                <path d="M33 16 Q36 24 29 18 Z" fill="#e8c4c9" />
+                                <!-- Multi-Petal Rosaria Rose -->
+                                <g transform="translate(18, 16)">
+                                    <circle r="10.5" fill="#d5a3aa" stroke="#471a27" stroke-width="1.2" />
+                                    <path d="M-7 -2 C-4 -9, 6 -9, 8 -1 C9 5, 1 9, -4 7 C-8 5, -9 -1, -4 -4 C-1 -6, 4 -4, 4 0 C4 3, 0 5, -2 2" stroke="#471a27" stroke-width="1.2" fill="#e8c4c9" />
+                                </g>
+                            </svg>
+                        </button>
+                        <p id="loading-status" class="mt-2 hidden text-center text-[11px] font-medium text-[#d5a3aa]">
+                            Weaving patch &amp; auditing dependencies...
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Empty Workbench Prompt -->
+        <section id="empty-workbench" class="gothic-card rounded-2xl p-10 text-center">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#cc959f]/40 bg-[#9c4e60]/20 text-[#d5a3aa]">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+            </div>
+            <h3 class="mt-3 text-sm font-bold" style="color: var(--text-primary);">
+                Side-by-Side Before vs. After Sanctuary
+            </h3>
+            <p class="mx-auto mt-1 max-w-lg text-xs" style="color: var(--text-muted);">
+                Load a sample, drop a file, or paste a public GitHub link above, then click <span class="font-semibold text-[#d5a3aa]">Patch Legacy Now</span>—or click any saved run in History below.
+            </p>
+        </section>
+
+        <!-- Results Workbench -->
+        <section id="results-section" class="hidden space-y-6">
+            <!-- Metadata + Confidence Radial Gauge Ring -->
+            <div class="gothic-card rounded-2xl p-4 sm:p-5">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div class="space-y-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span id="res-filename" class="rounded-lg border border-[#cc959f]/40 bg-[#1a0b12] px-2.5 py-1 font-mono text-xs font-bold text-[#faecef]"></span>
+                            <span id="res-language" class="rounded-lg bg-[#9c4e60]/30 px-2.5 py-1 text-xs font-semibold text-[#f2dde0]"></span>
+                            <span id="res-framework" class="rounded-lg bg-[#7c3749]/35 px-2.5 py-1 text-xs font-semibold text-[#e8c4c9]"></span>
+                            <span id="res-mode" class="rounded-lg border border-[#cc959f]/25 bg-black/25 px-2.5 py-1 text-xs font-medium text-[#d5a3aa]"></span>
+                            <span id="res-lines-delta" class="rounded-lg border border-[#cc959f]/25 bg-black/25 px-2.5 py-1 font-mono text-xs text-[#e8c4c9]"></span>
+                        </div>
+                        <p id="res-target-stack" class="text-xs" style="color: var(--text-muted);"></p>
+                    </div>
+
+                    <!-- Animated Confidence Gauge Ring -->
+                    <div class="flex items-center gap-3 self-start rounded-xl border border-[#cc959f]/35 bg-[#1a0b12] px-4 py-2 lg:self-auto">
+                        <div class="relative flex h-12 w-12 items-center justify-center">
+                            <svg class="h-12 w-12 -rotate-90" viewBox="0 0 44 44">
+                                <circle cx="22" cy="22" r="18" stroke="rgba(213,163,170,0.18)" stroke-width="4" fill="none" />
+                                <circle
+                                    id="res-confidence-ring"
+                                    cx="22"
+                                    cy="22"
+                                    r="18"
+                                    stroke="#d5a3aa"
+                                    stroke-width="4"
+                                    stroke-linecap="round"
+                                    fill="none"
+                                    stroke-dasharray="113.1"
+                                    stroke-dashoffset="113.1"
+                                    style="transition: stroke-dashoffset 0.5s ease;"
+                                />
+                            </svg>
+                            <span id="res-confidence-text" class="absolute text-[11px] font-extrabold text-[#faecef]">0%</span>
+                        </div>
+                        <div>
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-[#f2dde0]">Patch Confidence</p>
+                            <p class="text-[10px] text-[#b58994]">Safety &amp; Migration Score</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- View Switcher + Copy/Download -->
+                <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#cc959f]/20 pt-4">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="gothic-inset inline-flex rounded-xl p-1">
+                            <button id="view-side-by-side-btn" type="button" class="rounded-lg bg-gradient-to-r from-[#7c3749] to-[#ad556c] px-3 py-1.5 text-xs font-semibold text-white">
+                                Side-by-Side (Before vs. After)
+                            </button>
+                            <button id="view-diff-btn" type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold text-[#cc959f] hover:text-white">
+                                Line Diff (- / +)
+                            </button>
+                        </div>
+
+                        <label id="sync-scroll-label" class="ml-2 inline-flex cursor-pointer items-center gap-1.5 text-xs" style="color: var(--text-secondary);">
+                            <input id="sync-scroll-checkbox" type="checkbox" checked class="h-3.5 w-3.5 accent-[#ad556c]" />
+                            <span>Sync Scroll</span>
+                        </label>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button id="copy-after-btn" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-[#cc959f]/35 bg-[#3a1623]/70 px-3 py-1.5 text-xs font-semibold text-[#faecef] transition hover:bg-[#5e2233]">
+                            <span id="copy-after-text">Copy After Code</span>
+                        </button>
+                        <button id="download-after-btn" type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#8d384f] to-[#ad556c] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110">
+                            <span>Download File</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side-by-Side Before vs. After Panes -->
+            <div id="side-by-side-view" class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div class="gothic-code-pane flex flex-col overflow-hidden rounded-2xl shadow-xl">
+                    <div class="flex items-center justify-between border-b border-rose-500/25 bg-[#1b0b12] px-4 py-2.5">
+                        <div class="flex items-center gap-2">
+                            <span class="rounded bg-rose-500/25 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-rose-200">
+                                Before
+                            </span>
+                            <span class="text-xs font-medium text-[#e2c2c9]">Legacy Input</span>
+                        </div>
+                        <span id="before-line-count" class="font-mono text-[11px] text-[#b58994]">0 lines</span>
+                    </div>
+                    <div id="before-scroll" class="code-scroll h-[460px] overflow-auto p-3 font-mono text-xs leading-6"></div>
+                </div>
+
+                <div class="gothic-code-pane flex flex-col overflow-hidden rounded-2xl shadow-xl" style="border-color: rgba(213, 163, 170, 0.5);">
+                    <div class="flex items-center justify-between border-b border-[#d5a3aa]/30 bg-[#230e17] px-4 py-2.5">
+                        <div class="flex items-center gap-2">
+                            <span class="rounded bg-[#ad556c]/35 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[#faecef]">
+                                After
+                            </span>
+                            <span class="text-xs font-medium text-[#f2dde0]">Patched &amp; Migrated</span>
+                        </div>
+                        <span id="after-line-count" class="font-mono text-[11px] text-[#d5a3aa]">0 lines</span>
+                    </div>
+                    <div id="after-scroll" class="code-scroll h-[460px] overflow-auto p-3 font-mono text-xs leading-6"></div>
+                </div>
+            </div>
+
+            <!-- Unified Line Diff View -->
+            <div id="diff-view" class="gothic-code-pane hidden overflow-hidden rounded-2xl shadow-xl">
+                <div class="flex items-center justify-between border-b border-[#cc959f]/25 bg-[#1b0b12] px-4 py-2.5">
+                    <span class="text-xs font-semibold text-[#faecef]">Line-by-Line Cathedral Diff</span>
+                    <div class="flex items-center gap-3 text-[11px]">
+                        <span class="text-rose-400">- Removed</span>
+                        <span class="text-emerald-400">+ Added</span>
+                    </div>
+                </div>
+                <div id="diff-content" class="code-scroll max-h-[520px] overflow-auto p-3 font-mono text-xs leading-6"></div>
+            </div>
+
+            <!-- Agent 2 Independent Review Card -->
+            <div id="agent2-result-card" class="hidden gothic-card rounded-2xl p-5" style="border-color: rgba(213, 163, 170, 0.55);">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#cc959f]/25 pb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-[#d5a3aa]"></span>
+                        <h3 class="text-sm font-bold" style="color: var(--text-primary);">
+                            Agent 2 Independent Audit
+                        </h3>
+                        <span id="agent2-model-badge" class="rounded bg-[#9c4e60]/30 px-2 py-0.5 font-mono text-[11px] text-[#f2dde0]"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="agent2-verdict-badge" class="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-300"></span>
+                        <span id="agent2-score-text" class="font-mono text-xs font-bold text-[#d5a3aa]"></span>
+                    </div>
+                </div>
+                <ul id="agent2-notes-list" class="mt-3 space-y-2 text-xs" style="color: var(--text-secondary);"></ul>
+            </div>
+
+            <!-- Executive Summary & 4 Breakdown Cards -->
+            <div class="gothic-card rounded-2xl p-5">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-[#d5a3aa]">Executive Summary</h3>
+                <p id="res-summary" class="mt-2 text-sm leading-relaxed" style="color: var(--text-primary);"></p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div class="gothic-card rounded-2xl p-5">
+                    <div class="flex items-center gap-2">
+                        <span class="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-[#d5a3aa]"></span>
+                        <h3 class="text-sm font-bold" style="color: var(--text-primary);">Dependency &amp; API Migrations</h3>
+                    </div>
+                    <ul id="res-migrations-list" class="mt-3 space-y-2 text-xs" style="color: var(--text-secondary);"></ul>
+                </div>
+
+                <div class="gothic-card rounded-2xl p-5">
+                    <div class="flex items-center gap-2">
+                        <span class="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-emerald-400"></span>
+                        <h3 class="text-sm font-bold" style="color: var(--text-primary);">Refactoring Improvements</h3>
+                    </div>
+                    <ul id="res-changes-list" class="mt-3 space-y-2 text-xs" style="color: var(--text-secondary);"></ul>
+                </div>
+
+                <div class="gothic-card rounded-2xl p-5">
+                    <div class="flex items-center gap-2">
+                        <span class="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-amber-400"></span>
+                        <h3 class="text-sm font-bold" style="color: var(--text-primary);">Breaking Changes &amp; Review Notes</h3>
+                    </div>
+                    <ul id="res-risks-list" class="mt-3 space-y-2 text-xs" style="color: var(--text-secondary);"></ul>
+                </div>
+
+                <div class="gothic-card rounded-2xl p-5">
+                    <div class="flex items-center gap-2">
+                        <span class="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-[#ad556c]"></span>
+                        <h3 class="text-sm font-bold" style="color: var(--text-primary);">Recommended Verification Steps</h3>
+                    </div>
+                    <ul id="res-verification-list" class="mt-3 space-y-2 text-xs" style="color: var(--text-secondary);"></ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Analytics KPI Strip + Charts -->
+        <section class="gothic-card rounded-2xl p-5 sm:p-6">
+            <div class="pb-2">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <svg class="h-6 w-6 shrink-0 text-[#d5a3aa]" viewBox="0 0 28 28" fill="none">
+                            <path d="M14 2 L16 10 L24 12 L16 14 L14 26 L12 14 L4 12 L12 10 Z" fill="#7c3749" stroke="#e8c4c9" stroke-width="1.1" />
+                            <circle cx="14" cy="12" r="2.8" fill="#d5a3aa" />
+                        </svg>
+                        <h2 class="text-sm font-bold uppercase tracking-wider" style="color: var(--text-primary);">
+                            Sanctuary Telemetry &amp; Refactoring Charts
+                        </h2>
+                    </div>
+                    <span class="text-[11px]" style="color: var(--text-muted);">Live SQLite Analytics</span>
+                </div>
+                <svg class="mt-2 h-4 w-full" viewBox="0 0 900 16" preserveAspectRatio="none" fill="none">
+                    <path d="M0 8 C 110 2, 220 14, 330 8 C 440 2, 550 14, 660 8 C 770 2, 840 12, 900 8" stroke="#ad556c" stroke-width="1.5" />
+                    <path d="M90 7 Q82 1 97 5 Z M245 10 Q254 16 239 13 Z M430 7 Q422 1 437 5 Z M615 10 Q624 16 609 13 Z M790 7 Q782 1 797 5 Z" fill="#d5a3aa" />
+                </svg>
+            </div>
+
+            <!-- 4 KPI Cards -->
+            <div class="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div class="gothic-inset rounded-xl p-3.5">
+                    <p class="text-[11px] font-medium uppercase tracking-wider" style="color: var(--text-muted);">Patches Executed</p>
+                    <p id="stat-total-runs" class="mt-1 text-2xl font-extrabold text-[#d5a3aa]">0</p>
+                </div>
+                <div class="gothic-inset rounded-xl p-3.5">
+                    <p class="text-[11px] font-medium uppercase tracking-wider" style="color: var(--text-muted);">Avg Confidence</p>
+                    <p id="stat-avg-conf" class="mt-1 text-2xl font-extrabold text-emerald-400">0%</p>
+                </div>
+                <div class="gothic-inset rounded-xl p-3.5">
+                    <p class="text-[11px] font-medium uppercase tracking-wider" style="color: var(--text-muted);">Deps Migrated</p>
+                    <p id="stat-total-migrations" class="mt-1 text-2xl font-extrabold text-[#e8c4c9]">0</p>
+                </div>
+                <div class="gothic-inset rounded-xl p-3.5">
+                    <p class="text-[11px] font-medium uppercase tracking-wider" style="color: var(--text-muted);">Dual-Agent Audits</p>
+                    <p id="stat-dual-runs" class="mt-1 text-2xl font-extrabold text-[#ad556c]">0</p>
+                </div>
+            </div>
+
+            <!-- 2 Visual Charts -->
+            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div class="gothic-inset rounded-xl p-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-xs font-bold uppercase tracking-wider" style="color: var(--text-secondary);">
+                            Lines Before vs. After (Recent Runs)
+                        </h3>
+                        <div class="flex items-center gap-3 text-[10px]" style="color: var(--text-muted);">
+                            <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-[#7c3749]"></span>Before</span>
+                            <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-[#d5a3aa]"></span>After</span>
+                        </div>
+                    </div>
+                    <div id="chart-lines-trend" class="mt-3 flex min-h-[120px] items-end gap-2"></div>
+                </div>
+
+                <div class="gothic-inset rounded-xl p-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-xs font-bold uppercase tracking-wider" style="color: var(--text-secondary);">
+                            Languages &amp; Manifests Distribution
+                        </h3>
+                        <span class="text-[10px]" style="color: var(--text-muted);">Top Detected</span>
+                    </div>
+                    <div id="chart-languages" class="mt-3 space-y-2.5"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SQLite History Panel -->
+        <section id="history-section" class="gothic-card rounded-2xl p-5 sm:p-6">
+            <div class="pb-3">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <svg class="h-6 w-6 shrink-0 text-[#d5a3aa]" viewBox="0 0 28 28" fill="none">
+                            <path d="M14 2 L16 10 L24 12 L16 14 L14 26 L12 14 L4 12 L12 10 Z" fill="#7c3749" stroke="#e8c4c9" stroke-width="1.1" />
+                            <circle cx="14" cy="12" r="2.8" fill="#d5a3aa" />
+                        </svg>
+                        <div>
+                            <h2 class="text-base font-bold" style="color: var(--text-primary);">
+                                Patch Chronicle (Saved History)
+                            </h2>
+                            <p class="text-xs" style="color: var(--text-muted);">
+                                Saved locally in SQLite so your past refactors stay ready whenever you open PPL.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="refresh-history-btn" type="button" class="rounded-lg border border-[#cc959f]/35 bg-[#3a1623]/60 px-3 py-1.5 text-xs font-medium text-[#faecef] transition hover:bg-[#5e2233]">
+                            Refresh
+                        </button>
+                        <button id="clear-history-btn" type="button" class="rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-300 transition hover:bg-rose-500/25">
+                            Clear All
+                        </button>
+                    </div>
+                </div>
+                <svg class="mt-2 h-4 w-full" viewBox="0 0 900 16" preserveAspectRatio="none" fill="none">
+                    <path d="M0 8 C 120 14, 240 2, 360 8 C 480 14, 600 2, 720 8 L 900 8" stroke="#ad556c" stroke-width="1.4" />
+                    <path d="M130 10 Q138 16 123 13 Z M310 7 Q302 1 317 5 Z M520 10 Q528 16 513 13 Z M710 7 Q702 1 717 5 Z" fill="#d5a3aa" />
+                </svg>
+            </div>
+
+            <div id="history-list" class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"></div>
+        </section>
+
+        <!-- Editable About PPL Section -->
+        <section id="about-section" class="gothic-card rounded-2xl p-5 sm:p-6">
+            <div class="pb-3">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <svg class="h-6 w-6 shrink-0 text-[#d5a3aa]" viewBox="0 0 28 28" fill="none">
+                            <path d="M14 2 L16 10 L24 12 L16 14 L14 26 L12 14 L4 12 L12 10 Z" fill="#7c3749" stroke="#e8c4c9" stroke-width="1.1" />
+                            <circle cx="14" cy="12" r="2.8" fill="#d5a3aa" />
+                        </svg>
+                        <h2 class="text-base font-bold" style="color: var(--text-primary);">
+                            About PPL: Please Patch Legacy
+                        </h2>
+                    </div>
+                    <button id="edit-about-btn" type="button" class="rounded-lg border border-[#cc959f]/35 bg-[#3a1623]/60 px-3 py-1.5 text-xs font-semibold text-[#f2dde0] transition hover:bg-[#5e2233]">
+                        Customize About Text
+                    </button>
+                </div>
+                <svg class="mt-2 h-4 w-full" viewBox="0 0 900 16" preserveAspectRatio="none" fill="none">
+                    <path d="M0 8 C 140 2, 280 14, 420 8 C 560 2, 700 14, 900 8" stroke="#ad556c" stroke-width="1.4" />
+                    <path d="M110 7 Q102 1 117 5 Z M360 10 Q368 16 353 13 Z M640 7 Q632 1 647 5 Z" fill="#d5a3aa" />
+                </svg>
+            </div>
+
+            <div id="about-display" class="mt-2 space-y-2 text-xs leading-relaxed sm:text-sm" style="color: var(--text-secondary);">
+                <p id="about-custom-text"></p>
+            </div>
+
+            <div id="about-editor" class="mt-3 hidden space-y-3">
+                <textarea
+                    id="about-textarea"
+                    rows="4"
+                    class="w-full rounded-xl border border-[#cc959f]/35 bg-[#12070c] p-3 text-xs leading-relaxed text-[#faecef] focus:border-[#d5a3aa] focus:outline-none"
+                ></textarea>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button id="save-about-btn" type="button" class="rounded-lg bg-[#9c4e60] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#ad556c]">
+                        Save About Text
+                    </button>
+                    <button id="reset-about-btn" type="button" class="rounded-lg border border-[#cc959f]/35 px-3 py-1.5 text-xs text-[#f2dde0] hover:bg-[#3a1623]">
+                        Reset Default
+                    </button>
+                    <button id="cancel-about-btn" type="button" class="rounded-lg px-3 py-1.5 text-xs text-[#cc959f] hover:text-white">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
