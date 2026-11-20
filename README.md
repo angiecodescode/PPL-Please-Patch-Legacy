@@ -1,32 +1,53 @@
+<div align="center">
+
 # PPL: Please Patch Legacy
 
-> *An AI-Powered Autonomous Code Refactoring, Dependency Migration & Dual-Agent Audit Studio — styled after Rosaria's Indenture namecard from Genshin Impact.*
+**An AI-Powered Autonomous Code Refactoring, Dependency Migration & Dual-Agent Audit Studio**  
+*Styled after Rosaria's **Indenture** namecard from Genshin Impact.*
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-9c4e60?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-ad556c?style=flat-square)
-![SQLite](https://img.shields.io/badge/SQLite-Persistent_History-7c3749?style=flat-square)
-![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-Gothic_UI-d5a3aa?style=flat-square)
+![SQLite](https://img.shields.io/badge/SQLite-History_%26_Analytics-7c3749?style=flat-square)
+![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-Rosaria_Theme-d5a3aa?style=flat-square)
+
+</div>
+
+---
+
+## Preview
+
+> *Add 1–2 screenshots of your Rosaria UI and Before vs. After comparison right below this line on GitHub.*
 
 ---
 
 ## Why I Built PPL
 
-PPL: Please Patch Legacy was built to rescue developers from unc-ish (brittle) legacy codebases and outdated dependencies.
+TBH, I built **PPL** to rescue myself from the pain of manually researching outdated library migrations, cleaning messy datasets, and dealing with brittle legacy code. It took over a month of trial, error, and questioning my life choices as someone new to fullstack development.
 
-TBH, this started out to rescue myself from the pain of manually researching outdated library migrations and cleaning messy code/datasets, after God knows how many days and constant questioning of my life choices i somehow made this. I originally started with one free AI model, and after larping on Instagram for days, I discovered NVIDIA's free developer API catalog too, so I hooked both together for an optional Second-Agent audit. The visual theme was inspired by Rosaria's *Indenture* namecard (Genshin Impact), and the name **PPL** came straight from my tears and backpain and my receding hairline. and i am new to fullstack and ngl this was a very difficult project to do, it took a while(more then a month) to wrap my head around it. thanks for reading.
+I started with one free AI model (*because nothing is free these days*), and after larping Instagram for a bit and got to know NVIDIA also had free developer models,so I hooked them in as an optional Second-Agent auditor. The visual theme is inspired by **Rosaria's *Indenture* namecard** (Genshin Impact), and the name **PPL** came straight from my tears, backpain, and receding hairline.
+
+---
+
+## How It Works
+
+```mermaid
+flowchart LR
+    A["Input<br/>Paste / Upload / GitHub URL"] --> B["FastAPI Backend"]
+    B --> C["Primary AI Agent<br/>Refactor & Dependency Migration"]
+    C --> D{"Optional Agent 2<br/>NVIDIA NIM Audit"}
+    D --> E["Side-by-Side Before vs. After<br/>+ Unified Line Diff"]
+    E --> F[("SQLite History<br/>& Live Charts")]
+```
 
 ---
 
 ## Key Features
 
-- **3 Flexible Input Modes:** Paste raw code/manifests, drag-and-drop local files (`requirements.txt`, `package.json`, `.py`, `.js`, `.ts`, etc.), or paste a **public GitHub file/repository URL** to browse and patch files directly.
-- **16 Migration Goal Presets:** Python 2 -> Python 3.12+, Flask -> FastAPI + Pydantic v2, Legacy Django -> Django 5, Sync `requests` -> Async `httpx`, Pydantic v1 -> v2, SQLAlchemy 1.x -> 2.0, Legacy JS -> TypeScript, React Class -> Hooks, Security Hardening, and more.
-- **Dual-Agent Architecture:**
-  - **Primary Agent:** Autonomous refactoring & dependency migration via the official `google-genai` SDK (`gemini-4-hydrogen`) with multi-key rotation support.
-  - **Optional Agent 2 Auditor:** Connects to NVIDIA NIM's live free model catalog (DeepSeek, Qwen, Nemotron, Llama, Mistral, etc.) to independently audit the patched output for bugs, edge cases, and security issues.
-- **Side-by-Side Before vs. After & Unified Line Diff:** Synchronized dual-pane code comparison, inline `- / +` line-by-line LCS diffing, radial confidence gauge, and 1-click file download.
-- **SQLite Telemetry & Charts:** Automatically persists every patch in local SQLite (`refactoring_history.db`) and renders live line-count and language distribution charts.
-- **Rosaria Gothic Studio + Live Theme Switcher:** Switch anytime between **Rosaria (Indenture)**, **Bloodmoon Crimson**, and **Cathedral Rose (Light)**.
+- **3 Ways to Load Legacy Code:** Paste code directly, drag-and-drop files (`requirements.txt`, `package.json`, `.py`, `.js`, etc.), or paste any **public GitHub file/repo URL** to browse and patch straight from GitHub.
+- **16 Migration Presets:** Covers Python 2 → 3.12+, Flask → FastAPI + Pydantic v2, Django 5, Sync `requests` → Async `httpx`, Pydantic v1 → v2, SQLAlchemy 1.x → 2.0, Legacy JS → TypeScript, React Class → Hooks, Security Hardening, and more.
+- **Dual-Agent Auditing:** Primary refactoring runs via the `google-genai` SDK (`gemini-4-hydrogen` with multi-key rotation), paired with an optional **Agent 2** security/logic auditor using NVIDIA NIM's free model catalog (DeepSeek, Qwen, Nemotron, Llama, Mistral).
+- **Side-by-Side Diff & Confidence Gauge:** Synchronized Before vs. After panes, browser-side LCS line-by-line (`- / +`) diffing, breaking-change warnings, and 1-click file download.
+- **SQLite Telemetry & Theme Switcher:** Persists every patch locally in SQLite (`refactoring_history.db`), renders live line-count and language charts, and lets you switch between **Rosaria (Indenture)**, **Bloodmoon Crimson**, and **Cathedral Rose (Light)**.
 
 ---
 
@@ -39,11 +60,11 @@ TBH, this started out to rescue myself from the pain of manually researching out
 | **Optional Agent 2** | NVIDIA NIM OpenAI-compatible API (`build.nvidia.com`) |
 | **Database** | SQLite (`sqlite3`) with automatic schema migration |
 | **Frontend** | HTML5, Tailwind CSS (CDN), Vanilla JavaScript, Custom SVG Art |
-| **Security** | `.env` via `python-dotenv`, strict GitHub-only URL allowlist for repo fetching |
+| **Security** | `.env` via `python-dotenv`, strict GitHub-only URL allowlist |
 
 ---
 
-## Run Locally in 4 Steps
+## Run Locally
 
 ### 1. Clone the repository
 ```bash
@@ -66,35 +87,35 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure your `.env` file
-Copy `.env.example` to `.env` and add your keys:
+### 3. Add your API keys to `.env`
+Copy `.env.example` to `.env` and fill in your keys:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_API_KEYS=
 NVIDIA_API_KEY=
 ```
 - Get a Gemini API key from **Google AI Studio**.
-- *(Optional)* Get a free `nvapi-...` key from **build.nvidia.com** to unlock the live catalog for Agent 2 auditing.
+- *(Optional)* Grab a free `nvapi-...` key from **build.nvidia.com** for the live Agent 2 model catalog.
 
-### 4. Start the server
+### 4. Launch the server
 ```bash
 python -m uvicorn main:app --reload
 ```
-Open **`http://127.0.0.1:8000`** in your browser.
+Then open **`http://127.0.0.1:8000`** in your browser.
 
 ---
 
 ## Project Structure
 
 ```text
-├── .env.example          # Environment variable template (secrets excluded via .gitignore)
+├── .env.example          # Safe environment variable template
 ├── .gitignore            # Protects .env, virtual environments, and local .db files
 ├── README.md             # Project documentation
 ├── requirements.txt      # Python dependencies
-├── database.py           # SQLite storage, auto-migrations, and analytics queries
+├── database.py           # SQLite storage, migrations, and analytics queries
 ├── main.py               # FastAPI server, AI orchestration, and GitHub URL importer
 ├── static/
-│   └── app.js            # Vanilla JS client, LCS diffing, charts, and theme switcher
+│   └── app.js            # Client logic, LCS diffing, charts, and theme switcher
 └── templates/
     └── index.html        # Rosaria-themed HTML + Tailwind CSS workbench
 ```
@@ -103,4 +124,4 @@ Open **`http://127.0.0.1:8000`** in your browser.
 
 ## Contributing
 
-Contributions, new migration presets, and bug fixes are always welcome! Feel free to open an issue or submit a pull request and feel free to yap. tbh i am new to fullstack to feel free to advice on any flaws.
+I'm new to fullstack development, so feedback, bug fixes, and new migration presets are super welcome! Feel free to open an issue, submit a PR, or just yap and advise on any flaws.
