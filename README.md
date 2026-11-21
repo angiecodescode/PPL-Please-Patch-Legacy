@@ -16,7 +16,14 @@
 
 ## Preview
 
+<<<<<<< HEAD
 > 
+=======
+<img width="1366" height="613" alt="Screenshot (80)" src="https://github.com/user-attachments/assets/227069b7-ce0d-4e8d-b9e2-ed143cdcd212" />
+<img width="1366" height="599" alt="Screenshot (81)" src="https://github.com/user-attachments/assets/9d935cff-e70b-4689-ab6b-3d9e50666479" />
+<img width="1366" height="610" alt="Screenshot (82)" src="https://github.com/user-attachments/assets/96ade087-3586-4acb-b801-ddab4a239a76" />
+
+>>>>>>> 27ffddeb795282daf82a4961777a01e6d61b7808
 
 ---
 
