@@ -16,7 +16,7 @@
 
 ## Preview
 
-> *Add 1–2 screenshots of your Rosaria UI and Before vs. After comparison right below this line on GitHub.*
+> 
 
 ---
 
@@ -24,7 +24,7 @@
 
 TBH, I built **PPL** to rescue myself from the pain of manually researching outdated library migrations, cleaning messy datasets, and dealing with brittle legacy code. It took over a month of trial, error, and questioning my life choices as someone new to fullstack development.
 
-I started with one free AI model (*because nothing is free these days*), and after larping Instagram for a bit and got to know NVIDIA also had free developer models,so I hooked them in as an optional Second-Agent auditor. The visual theme is inspired by **Rosaria's *Indenture* namecard** (Genshin Impact), and the name **PPL** came straight from my tears, backpain, and receding hairline.
+I started with one free AI model (*because nothing is free these days*), and after larping Instagram for a bit and got to know NVIDIA also had free developer models,so I hooked them in as an optional Second-Agent auditor. The visual theme is inspired by **Rosaria's *Indenture* namecard** (Genshin Impact), and the name **PPL** came Idk i found it funny, T~T
 
 ---
 
