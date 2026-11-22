@@ -1,10 +1,15 @@
 import asyncio
 import json
 import os
+import random
 import re
+import ssl
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -26,8 +31,18 @@ load_dotenv()
 
 APP_TITLE = "PPL: Please Patch Legacy"
 GEMINI_MODEL = "gemini-4-hydrogen"
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.8-flash").strip()
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_FALLBACK_MODEL = "qwen/qwen2.5-coder-32b-instruct"
 MAX_UPLOAD_BYTES = 1_000_000  # 1 MB limit for source code and manifest files
+GEMINI_TIMEOUT_MS = 120_000  # 120 seconds (in milliseconds)
+MAX_RETRIES_PER_MODEL = 2
+
+# Public deployment protection (set PPL_RATE_LIMIT_MAX=0 in .env to disable locally)
+RATE_LIMIT_MAX = int(os.getenv("PPL_RATE_LIMIT_MAX", "12"))
+RATE_LIMIT_WINDOW_SEC = int(os.getenv("PPL_RATE_LIMIT_WINDOW_SEC", "900"))
+_rate_limit_hits: dict[str, list[float]] = defaultdict(list)
+_rate_limit_lock = threading.Lock()
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -102,7 +117,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=APP_TITLE,
     description="Rosaria-themed Autonomous Code Refactoring, Dependency Migration & Multi-Agent Review Platform.",
-    version="2.0.0",
+    version="2.0.1",
     lifespan=lifespan,
 )
 
@@ -119,7 +134,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 class RefactorOutputSchema(BaseModel):
-    """Flat structured output schema returned by Gemini 4 Hydrogen."""
+    """Flat structured output schema returned by the primary refactoring agent."""
 
     detected_language: str = Field(
         description="Detected programming language or manifest format (e.g., Python, TypeScript, requirements.txt, package.json)."
@@ -192,6 +207,41 @@ class GitHubFetchFileRequest(BaseModel):
     path: str = Field(..., min_length=1)
 
 
+def _get_client_ip(request: Request) -> str:
+    """Resolve the caller IP cleanly, including behind Render's X-Forwarded-For proxy."""
+    forwarded = request.headers.get("x-forwarded-for", "").strip()
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    """Apply a sliding-window per-IP rate limit to protect public demo API quotas."""
+    if RATE_LIMIT_MAX <= 0 or RATE_LIMIT_WINDOW_SEC <= 0:
+        return
+
+    client_ip = _get_client_ip(request)
+    now = time.monotonic()
+    cutoff = now - RATE_LIMIT_WINDOW_SEC
+
+    with _rate_limit_lock:
+        recent = [ts for ts in _rate_limit_hits[client_ip] if ts > cutoff]
+        if len(recent) >= RATE_LIMIT_MAX:
+            _rate_limit_hits[client_ip] = recent
+            wait_minutes = max(1, RATE_LIMIT_WINDOW_SEC // 60)
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Public demo rate limit reached ({RATE_LIMIT_MAX} refactors per "
+                    f"{wait_minutes} minutes). Please wait a bit and try again."
+                ),
+            )
+        recent.append(now)
+        _rate_limit_hits[client_ip] = recent
+
+
 def _get_gemini_api_keys() -> list[str]:
     """Collect primary and fallback Gemini API keys from .env without duplicates."""
     raw_keys: list[str] = []
@@ -227,8 +277,7 @@ def _resolve_nvidia_api_key(override_key: str = "") -> str:
     candidate = (override_key or "").strip()
     if candidate:
         return candidate
-    env_key = os.getenv("NVIDIA_API_KEY", "").strip()
-    return env_key
+    return os.getenv("NVIDIA_API_KEY", "").strip()
 
 
 def _strip_markdown_fences(raw_text: str) -> str:
@@ -257,9 +306,9 @@ def _http_json_request(
     payload: Optional[dict[str, Any]] = None,
     timeout: int = 20,
 ) -> dict[str, Any]:
-    """Perform an HTTPS JSON request using Python's standard library."""
+    """Perform an HTTPS JSON request with a single retry on transient SSL/network drops."""
     req_headers = {
-        "User-Agent": "PPL-Please-Patch-Legacy/2.0",
+        "User-Agent": "PPL-Please-Patch-Legacy/2.0.1",
         "Accept": "application/json",
     }
     if headers:
@@ -270,35 +319,55 @@ def _http_json_request(
         data_bytes = json.dumps(payload).encode("utf-8")
         req_headers["Content-Type"] = "application/json"
 
-    req = urllib.request.Request(url, data=data_bytes, headers=req_headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            return json.loads(body) if body else {}
-    except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code}: {err_body[:300]}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Network error: {exc.reason}") from exc
+    for attempt in range(2):
+        req = urllib.request.Request(url, data=data_bytes, headers=req_headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+                return json.loads(body) if body else {}
+        except urllib.error.HTTPError as exc:
+            err_body = exc.read().decode("utf-8", errors="replace")
+            if exc.code in {429, 502, 503, 504} and attempt == 0:
+                time.sleep(0.7)
+                continue
+            raise RuntimeError(f"HTTP {exc.code}: {err_body[:300]}") from exc
+        except (urllib.error.URLError, ssl.SSLError, TimeoutError) as exc:
+            if attempt == 0:
+                time.sleep(0.7)
+                continue
+            reason = getattr(exc, "reason", str(exc))
+            raise RuntimeError(f"Network error: {reason}") from exc
+
+    return {}
 
 
 def _http_text_request(url: str, *, timeout: int = 20) -> str:
-    """Fetch plain UTF-8 text from an HTTPS endpoint safely."""
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "PPL-Please-Patch-Legacy/2.0"},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw_bytes = resp.read(MAX_UPLOAD_BYTES + 1)
-            if len(raw_bytes) > MAX_UPLOAD_BYTES:
-                raise RuntimeError(f"Remote file exceeds {MAX_UPLOAD_BYTES // 1000} KB limit.")
-            return raw_bytes.decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"HTTP {exc.code} while fetching file from GitHub.") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Network error while fetching GitHub file: {exc.reason}") from exc
+    """Fetch plain UTF-8 text from an HTTPS endpoint safely with one transient retry."""
+    for attempt in range(2):
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "PPL-Please-Patch-Legacy/2.0.1"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw_bytes = resp.read(MAX_UPLOAD_BYTES + 1)
+                if len(raw_bytes) > MAX_UPLOAD_BYTES:
+                    raise RuntimeError(f"Remote file exceeds {MAX_UPLOAD_BYTES // 1000} KB limit.")
+                return raw_bytes.decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code in {429, 502, 503, 504} and attempt == 0:
+                time.sleep(0.6)
+                continue
+            raise RuntimeError(f"HTTP {exc.code} while fetching file from GitHub.") from exc
+        except (urllib.error.URLError, ssl.SSLError, TimeoutError) as exc:
+            if attempt == 0:
+                time.sleep(0.6)
+                continue
+            reason = getattr(exc, "reason", str(exc))
+            raise RuntimeError(f"Network error while fetching GitHub file: {reason}") from exc
+
+    raise RuntimeError("Failed to fetch GitHub file.")
 
 
 def _build_system_instruction(mode: str) -> str:
@@ -337,14 +406,18 @@ def _build_system_instruction(mode: str) -> str:
 def _call_gemini_sync(
     *,
     api_key: str,
+    model_name: str = GEMINI_MODEL,
     code: str,
     filename: str,
     mode: str,
     target_stack: str,
     custom_instructions: str,
 ) -> dict[str, Any]:
-    """Execute a synchronous google-genai request against Gemini 4 Hydrogen."""
-    client = genai.Client(api_key=api_key)
+    """Execute a synchronous google-genai request with explicit 120s timeout."""
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS),
+    )
 
     user_prompt = (
         f"Filename / Context: {filename}\n"
@@ -358,7 +431,7 @@ def _call_gemini_sync(
     )
 
     response = client.models.generate_content(
-        model=GEMINI_MODEL,
+        model=model_name,
         contents=user_prompt,
         config=types.GenerateContentConfig(
             system_instruction=_build_system_instruction(mode),
@@ -387,45 +460,163 @@ def _call_gemini_sync(
     return data
 
 
-def _is_rotatable_gemini_error(exc: Exception) -> bool:
-    """Detect quota, rate-limit, or temporary errors where another API key may succeed."""
-    msg = str(exc).lower()
-    rotatable_signals = ("429", "quota", "rate limit", "resource_exhausted", "resource exhausted", "503", "unavailable")
-    return any(sig in msg for sig in rotatable_signals)
-
-
-def _run_gemini_with_rotation(
+def _call_nvidia_primary_fallback_sync(
     *,
+    nvidia_api_key: str,
+    nvidia_model: str,
     code: str,
     filename: str,
     mode: str,
     target_stack: str,
     custom_instructions: str,
 ) -> dict[str, Any]:
-    """Try configured Gemini API keys in sequence on quota or rate-limit errors."""
+    """Emergency fallback using NVIDIA NIM if Gemini models are temporarily unavailable."""
+    schema_hint = (
+        '{"detected_language": "string", "detected_framework": "string", '
+        '"refactored_code": "string", "summary": "string", '
+        '"changes_made": ["string"], "dependency_migrations": ["string"], '
+        '"breaking_changes_and_risks": ["string"], "verification_steps": ["string"], '
+        '"confidence_score": 85}'
+    )
+    user_prompt = (
+        f"Filename / Context: {filename}\n"
+        f"Operation Mode: {mode}\n"
+        f"Target Stack / Standards: {target_stack}\n"
+        f"Custom Instructions: {custom_instructions.strip() or 'None provided'}\n\n"
+        f"Return ONLY valid JSON matching this schema:\n{schema_hint}\n\n"
+        "Analyze and transform the following input:\n"
+        "```\n"
+        f"{code}\n"
+        "```"
+    )
+
+    payload = {
+        "model": nvidia_model,
+        "messages": [
+            {"role": "system", "content": _build_system_instruction(mode)},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 3500,
+        "stream": False,
+    }
+
+    resp = _http_json_request(
+        f"{NVIDIA_BASE_URL}/chat/completions",
+        method="POST",
+        headers={"Authorization": f"Bearer {nvidia_api_key}"},
+        payload=payload,
+        timeout=60,
+    )
+
+    choices = resp.get("choices") or []
+    if not choices:
+        raise RuntimeError("NVIDIA fallback returned no choices.")
+
+    message = choices[0].get("message") or {}
+    content = message.get("content") or message.get("reasoning_content") or ""
+    cleaned = _strip_markdown_fences(_strip_think_blocks(str(content)))
+    json_match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    parsed_json = json.loads(json_match.group(0) if json_match else cleaned)
+    validated = RefactorOutputSchema.model_validate(parsed_json).model_dump()
+    validated["confidence_score"] = max(1, min(100, int(validated.get("confidence_score", 80))))
+    return validated
+
+
+def _is_transient_gemini_error(exc: Exception) -> bool:
+    """Detect temporary overload, rate-limit, SSL EOF, or timeout errors worth retrying."""
+    msg = str(exc).lower()
+    transient_signals = (
+        "503",
+        "unavailable",
+        "overloaded",
+        "high demand",
+        "429",
+        "quota",
+        "rate limit",
+        "resource_exhausted",
+        "resource exhausted",
+        "ssl",
+        "eof",
+        "timed out",
+        "timeout",
+        "connection reset",
+        "temporarily unavailable",
+        "502",
+        "504",
+    )
+    return any(sig in msg for sig in transient_signals)
+
+
+def _run_primary_agent_with_resilience(
+    *,
+    code: str,
+    filename: str,
+    mode: str,
+    target_stack: str,
+    custom_instructions: str,
+    nvidia_model: str = "",
+    nvidia_api_key: str = "",
+) -> tuple[dict[str, Any], str]:
+    """Retry transient Gemini 503/SSL drops with backoff, rotate keys, and fall back gracefully."""
     keys = _get_gemini_api_keys()
+    models_to_try = [GEMINI_MODEL]
+    if GEMINI_FALLBACK_MODEL and GEMINI_FALLBACK_MODEL not in models_to_try:
+        models_to_try.append(GEMINI_FALLBACK_MODEL)
+
     last_error: Optional[Exception] = None
 
-    for idx, api_key in enumerate(keys):
+    for model_name in models_to_try:
+        for attempt in range(MAX_RETRIES_PER_MODEL):
+            for key_idx, api_key in enumerate(keys):
+                try:
+                    result = _call_gemini_sync(
+                        api_key=api_key,
+                        model_name=model_name,
+                        code=code,
+                        filename=filename,
+                        mode=mode,
+                        target_stack=target_stack,
+                        custom_instructions=custom_instructions,
+                    )
+                    return result, model_name
+                except Exception as exc:
+                    last_error = exc
+                    if not _is_transient_gemini_error(exc):
+                        # If key invalid and another key exists, try next key; otherwise fail fast
+                        if key_idx < len(keys) - 1:
+                            continue
+                        raise
+
+                    if key_idx < len(keys) - 1:
+                        continue
+
+            # Backoff before retrying the same model or moving to fallback model
+            if attempt < MAX_RETRIES_PER_MODEL - 1:
+                delay = (1.2 * (2 ** attempt)) + random.uniform(0.1, 0.5)
+                time.sleep(delay)
+
+    # Emergency NVIDIA NIM fallback if Google servers are completely congested and an NVIDIA key exists
+    resolved_nv_key = _resolve_nvidia_api_key(nvidia_api_key)
+    if resolved_nv_key and last_error is not None and _is_transient_gemini_error(last_error):
+        fallback_nv_model = (nvidia_model or "").strip() or NVIDIA_FALLBACK_MODEL
         try:
-            return _call_gemini_sync(
-                api_key=api_key,
+            nv_result = _call_nvidia_primary_fallback_sync(
+                nvidia_api_key=resolved_nv_key,
+                nvidia_model=fallback_nv_model,
                 code=code,
                 filename=filename,
                 mode=mode,
                 target_stack=target_stack,
                 custom_instructions=custom_instructions,
             )
-        except Exception as exc:
-            last_error = exc
-            has_more_keys = idx < len(keys) - 1
-            if has_more_keys and _is_rotatable_gemini_error(exc):
-                continue
-            raise
+            return nv_result, f"nvidia:{fallback_nv_model}"
+        except Exception:
+            pass
 
     if last_error is not None:
         raise last_error
-    raise RuntimeError("No Gemini API keys available.")
+    raise RuntimeError("No AI model attempts succeeded.")
 
 
 def _call_nvidia_second_agent_sync(
@@ -496,7 +687,6 @@ def _call_nvidia_second_agent_sync(
             "second_agent_notes": notes,
         }
     except Exception:
-        # Fallback cleanly if an open model returned plain bullet prose instead of strict JSON
         lines = [line.strip("-*• ").strip() for line in cleaned.splitlines() if line.strip()]
         return {
             "second_agent_model": nvidia_model,
@@ -516,7 +706,7 @@ async def run_autonomous_refactoring(
     nvidia_model: str = "",
     nvidia_api_key: str = "",
 ) -> dict[str, Any]:
-    """Run Gemini 4 Hydrogen (+ optional NVIDIA NIM Agent 2) and persist to SQLite."""
+    """Run resilient primary refactoring (+ optional NVIDIA NIM Agent 2) and persist to SQLite."""
     cleaned_code = code.strip("\ufeff")
     if not cleaned_code.strip():
         raise HTTPException(status_code=400, detail="Input code or file content cannot be empty.")
@@ -526,20 +716,22 @@ async def run_autonomous_refactoring(
     safe_instructions = (custom_instructions or "").strip()
 
     try:
-        ai_result = await asyncio.to_thread(
-            _run_gemini_with_rotation,
+        ai_result, actual_model_used = await asyncio.to_thread(
+            _run_primary_agent_with_resilience,
             code=cleaned_code,
             filename=safe_filename,
             mode=mode,
             target_stack=safe_target_stack,
             custom_instructions=safe_instructions,
+            nvidia_model=nvidia_model,
+            nvidia_api_key=nvidia_api_key,
         )
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Gemini 4 Hydrogen processing failed: {str(exc)}",
+            detail=f"AI refactoring failed after retries: {str(exc)}",
         ) from exc
 
     second_model = (nvidia_model or "").strip()
@@ -547,7 +739,13 @@ async def run_autonomous_refactoring(
     second_notes: list[str] = []
     second_score = 0
 
-    if second_model:
+    if second_model and actual_model_used == f"nvidia:{second_model}":
+        second_verdict = "Primary Fallback Used"
+        second_notes = [
+            f"Google Gemini was temporarily busy (503), so {second_model} generated this refactor directly."
+        ]
+        second_score = ai_result["confidence_score"]
+    elif second_model:
         resolved_nv_key = _resolve_nvidia_api_key(nvidia_api_key)
         if not resolved_nv_key:
             second_verdict = "Agent 2 Skipped"
@@ -570,7 +768,6 @@ async def run_autonomous_refactoring(
                 second_notes = audit_res["second_agent_notes"]
                 second_score = audit_res["second_agent_score"]
             except Exception as nv_exc:
-                # Preserve Agent 1's output even if NVIDIA NIM throttles or rejects a model
                 second_verdict = "Agent 2 Unavailable"
                 second_notes = [f"NVIDIA NIM ({second_model}) could not complete review: {str(nv_exc)}"]
 
@@ -589,7 +786,7 @@ async def run_autonomous_refactoring(
         breaking_changes_and_risks=ai_result["breaking_changes_and_risks"],
         verification_steps=ai_result["verification_steps"],
         confidence_score=ai_result["confidence_score"],
-        model_used=GEMINI_MODEL,
+        model_used=actual_model_used,
         second_agent_model=second_model,
         second_agent_verdict=second_verdict,
         second_agent_notes=second_notes,
@@ -638,7 +835,7 @@ def _inspect_github_url_sync(raw_url: str) -> dict[str, Any]:
         file_path = "/".join(parts[4:])
         raw_file_url = (
             f"https://raw.githubusercontent.com/{urllib.parse.quote(owner)}/"
-            f"{urllib.parse.quote(repo)}/{urllib.parse.quote(branch)}/{file_path}"
+            f"{urllib.parse.quote(repo)}/{urllib.parse.quote(branch)}/{urllib.parse.quote(file_path, safe='/')}"
         )
         code_text = _http_text_request(raw_file_url)
         return {
@@ -685,7 +882,6 @@ def _inspect_github_url_sync(raw_url: str) -> dict[str, Any]:
             if _is_supported_repo_file(item_path):
                 files.append({"path": item_path, "size": item_size})
 
-        # Prioritize common entry files and dependency manifests first
         files.sort(key=lambda f: (0 if f["path"].lower() in SPECIAL_FILENAMES else 1, f["path"].count("/"), f["path"]))
 
         return {
@@ -786,7 +982,7 @@ async def serve_home(request: Request):
         content=(
             "<html><body style='font-family: sans-serif; padding: 2rem; background: #0f0912; color: #f8e8f0;'>"
             "<h1>PPL: Please Patch Legacy — Backend Ready</h1>"
-            "<p>Upgrade Step 1 backend is active. Proceed to Upgrade Step 2 for the Rosaria Gothic UI!</p>"
+            "<p>Resilient FastAPI + SQLite backend is active.</p>"
             "</body></html>"
         )
     )
@@ -808,9 +1004,11 @@ async def health_check() -> dict[str, Any]:
         "status": "ok",
         "app_title": APP_TITLE,
         "model": GEMINI_MODEL,
+        "fallback_model": GEMINI_FALLBACK_MODEL,
         "api_key_configured": len(keys_found) > 0,
         "gemini_keys_count": len(keys_found),
         "nvidia_key_configured": bool(nvidia_key),
+        "rate_limit_enabled": RATE_LIMIT_MAX > 0,
         "database": "sqlite",
     }
 
@@ -834,11 +1032,15 @@ async def inspect_github_url(payload: GitHubInspectRequest) -> dict[str, Any]:
 
 @app.post("/api/github/fetch-file")
 async def fetch_github_repo_file(payload: GitHubFetchFileRequest) -> dict[str, Any]:
-    """Download a specific file from a public GitHub repository."""
-    clean_path = payload.path.lstrip("/")
+    """Download a specific file from a public GitHub repository safely."""
+    clean_path = payload.path.strip().lstrip("/")
+    if not clean_path or ".." in Path(clean_path).parts:
+        raise HTTPException(status_code=400, detail="Invalid GitHub file path.")
+
+    encoded_path = urllib.parse.quote(clean_path, safe="/")
     raw_url = (
         f"https://raw.githubusercontent.com/{urllib.parse.quote(payload.owner)}/"
-        f"{urllib.parse.quote(payload.repo)}/{urllib.parse.quote(payload.branch)}/{clean_path}"
+        f"{urllib.parse.quote(payload.repo)}/{urllib.parse.quote(payload.branch)}/{encoded_path}"
     )
     try:
         code_text = await asyncio.to_thread(_http_text_request, raw_url)
@@ -854,8 +1056,9 @@ async def fetch_github_repo_file(payload: GitHubFetchFileRequest) -> dict[str, A
 
 
 @app.post("/api/refactor")
-async def refactor_pasted_code(payload: CodeRefactorRequest) -> dict[str, Any]:
-    """Refactor pasted or GitHub-imported code via Gemini 4 Hydrogen (+ optional Agent 2)."""
+async def refactor_pasted_code(request: Request, payload: CodeRefactorRequest) -> dict[str, Any]:
+    """Refactor pasted or GitHub-imported code via Gemini 4 Hydrogen (+ fallback & Agent 2)."""
+    _enforce_rate_limit(request)
     record = await run_autonomous_refactoring(
         code=payload.code,
         filename=payload.filename,
@@ -870,6 +1073,7 @@ async def refactor_pasted_code(payload: CodeRefactorRequest) -> dict[str, Any]:
 
 @app.post("/api/refactor/upload")
 async def refactor_uploaded_file(
+    request: Request,
     file: UploadFile = File(...),
     mode: Literal["full_autonomous", "refactor", "migrate_dependencies"] = Form("full_autonomous"),
     target_stack: str = Form("Latest stable LTS & modern best practices"),
@@ -878,6 +1082,7 @@ async def refactor_uploaded_file(
     nvidia_api_key: str = Form(""),
 ) -> dict[str, Any]:
     """Refactor an uploaded source code or dependency manifest file."""
+    _enforce_rate_limit(request)
     raw_bytes = await file.read()
     if not raw_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
