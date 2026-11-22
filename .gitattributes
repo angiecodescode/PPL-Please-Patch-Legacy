@@ -1,2 +1,3 @@
-# Exclude HTML template size from repository language stats so Python is primary
-*.html linguist-detectable=false
+# Exclude HTML templates from GitHub language statistics so Python is primary
+*.html linguist-vendored
+templates/*.html linguist-vendored
