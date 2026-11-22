@@ -1,0 +1,2 @@
+# Exclude HTML template size from repository language stats so Python is primary
+*.html linguist-detectable=false
